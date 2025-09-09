@@ -100,12 +100,19 @@ local function close_current_hover()
 end
 
 local function show_rtl_hover()
-	-- Don't trigger if cursor is in a floating window (hover window)
-	local current_win = vim.api.nvim_get_current_win()
-	local win_config = vim.api.nvim_win_get_config(current_win)
-	if win_config.relative ~= "" then
-		return
-	end
+  -- Only show hover in normal mode (not insert, visual, etc.)
+  local mode = vim.api.nvim_get_mode().mode
+  if mode ~= "n" then
+    close_current_hover()
+    return
+  end
+  
+  -- Don't trigger if cursor is in a floating window (hover window)
+  local current_win = vim.api.nvim_get_current_win()
+  local win_config = vim.api.nvim_win_get_config(current_win)
+  if win_config.relative ~= "" then
+    return
+  end
 
 	local current_line = vim.api.nvim_get_current_line()
 	local cursor_pos = vim.api.nvim_win_get_cursor(0)
