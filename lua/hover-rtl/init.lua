@@ -6,80 +6,102 @@ M.config = {
   highlight = "NormalFloat",
 }
 
+local current_hover_win = nil
+local last_cursor_pos = nil
+
 local function is_arabic_text(text)
-  for i = 1, #text do
-    local byte = string.byte(text, i)
-    if byte >= 0xD8 and byte <= 0xDF then
-      return true
+  -- Check for Arabic Unicode ranges more accurately
+  local i = 1
+  while i <= #text do
+    local byte = text:byte(i)
+    local char_len = 1
+    
+    if byte >= 240 then -- 4-byte UTF-8
+      char_len = 4
+    elseif byte >= 224 then -- 3-byte UTF-8
+      char_len = 3
+    elseif byte >= 192 then -- 2-byte UTF-8
+      char_len = 2
     end
+    
+    if char_len > 1 then
+      local char = text:sub(i, i + char_len - 1)
+      local codepoint = vim.fn.char2nr(char)
+      
+      -- Arabic ranges: 0x0600-0x06FF, 0x0750-0x077F, 0x08A0-0x08FF, 0xFB50-0xFDFF, 0xFE70-0xFEFF
+      if (codepoint >= 0x0600 and codepoint <= 0x06FF) or
+         (codepoint >= 0x0750 and codepoint <= 0x077F) or
+         (codepoint >= 0x08A0 and codepoint <= 0x08FF) or
+         (codepoint >= 0xFB50 and codepoint <= 0xFDFF) or
+         (codepoint >= 0xFE70 and codepoint <= 0xFEFF) then
+        return true
+      end
+    end
+    
+    i = i + char_len
   end
   
-  return text:match("[\u{0600}-\u{06FF}]") or 
-         text:match("[\u{0750}-\u{077F}]") or
-         text:match("[\u{08A0}-\u{08FF}]") or
-         text:match("[\u{FB50}-\u{FDFF}]") or
-         text:match("[\u{FE70}-\u{FEFF}]")
+  return false
 end
 
-local function reverse_text(text)
+local function reverse_text_properly(text)
+  -- Use vim.fn.strchars and vim.fn.strgetchar for proper UTF-8 handling
   local chars = {}
-  for char in vim.gsplit(text, "") do
-    if char ~= "" then
-      table.insert(chars, 1, char)
-    end
+  local char_count = vim.fn.strchars(text)
+  
+  for i = 0, char_count - 1 do
+    local char_nr = vim.fn.strgetchar(text, i)
+    local char = vim.fn.nr2char(char_nr)
+    table.insert(chars, 1, char)
   end
+  
   return table.concat(chars)
 end
 
+local function close_current_hover()
+  if current_hover_win and vim.api.nvim_win_is_valid(current_hover_win) then
+    vim.api.nvim_win_close(current_hover_win, true)
+    current_hover_win = nil
+  end
+end
+
 local function show_rtl_hover()
-  local current_word = vim.fn.expand("<cword>")
   local current_line = vim.api.nvim_get_current_line()
   local cursor_pos = vim.api.nvim_win_get_cursor(0)
-  local col = cursor_pos[2]
   
-  local word_start = col
-  local word_end = col
-  
-  while word_start > 0 and current_line:sub(word_start, word_start):match("%S") do
-    word_start = word_start - 1
-  end
-  word_start = word_start + 1
-  
-  while word_end <= #current_line and current_line:sub(word_end + 1, word_end + 1):match("%S") do
-    word_end = word_end + 1
+  -- Check if cursor moved significantly
+  if last_cursor_pos and 
+     (math.abs(cursor_pos[1] - last_cursor_pos[1]) > 0 or 
+      math.abs(cursor_pos[2] - last_cursor_pos[2]) > 5) then
+    close_current_hover()
   end
   
-  local selected_text = current_line:sub(word_start, word_end)
+  last_cursor_pos = cursor_pos
   
-  if not selected_text or selected_text == "" then
+  -- Check if line is under 1000 characters and contains Arabic
+  if #current_line >= 1000 or not is_arabic_text(current_line) then
+    close_current_hover()
     return
   end
   
-  if is_arabic_text(selected_text) then
-    local rtl_text = reverse_text(selected_text)
-    
-    local opts = {
-      relative = "cursor",
-      width = #rtl_text + 2,
-      height = 1,
-      row = 1,
-      col = 0,
-      style = "minimal",
-      border = M.config.border,
-    }
-    
-    local buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, {" " .. rtl_text .. " "})
-    
-    local win = vim.api.nvim_open_win(buf, false, opts)
-    vim.api.nvim_win_set_option(win, "winhl", "Normal:" .. M.config.highlight)
-    
-    vim.defer_fn(function()
-      if vim.api.nvim_win_is_valid(win) then
-        vim.api.nvim_win_close(win, true)
-      end
-    end, 3000)
+  -- Don't show hover if one is already displayed for this position
+  if current_hover_win and vim.api.nvim_win_is_valid(current_hover_win) then
+    return
   end
+  
+  -- Extract and reverse the entire line content
+  local rtl_text = reverse_text_properly(current_line)
+  
+  -- Use LSP-style hover with vim.lsp.util.open_floating_preview
+  local lines = {rtl_text}
+  local opts = {
+    border = M.config.border,
+    max_width = math.min(vim.o.columns - 4, 120),
+    max_height = math.min(vim.o.lines - 4, 20),
+    wrap = true,
+  }
+  
+  current_hover_win = vim.lsp.util.open_floating_preview(lines, "text", opts)
 end
 
 function M.setup(opts)
@@ -90,6 +112,20 @@ function M.setup(opts)
       pattern = "*",
       callback = show_rtl_hover,
       desc = "Show RTL hover for Arabic text"
+    })
+    
+    -- Add CursorMoved to close hover when moving away
+    vim.api.nvim_create_autocmd("CursorMoved", {
+      pattern = "*",
+      callback = function()
+        local cursor_pos = vim.api.nvim_win_get_cursor(0)
+        if last_cursor_pos and 
+           (math.abs(cursor_pos[1] - last_cursor_pos[1]) > 0 or 
+            math.abs(cursor_pos[2] - last_cursor_pos[2]) > 5) then
+          close_current_hover()
+        end
+      end,
+      desc = "Close RTL hover when cursor moves"
     })
   end
 end
