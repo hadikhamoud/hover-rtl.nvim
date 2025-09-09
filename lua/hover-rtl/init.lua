@@ -44,18 +44,50 @@ local function is_arabic_text(text)
   return false
 end
 
-local function reverse_text_properly(text)
-  -- Use vim.fn.strchars and vim.fn.strgetchar for proper UTF-8 handling
-  local chars = {}
+local function reverse_arabic_text(text)
+  -- Split text into tokens (words, punctuation, spaces)
+  local tokens = {}
+  local current_token = ""
   local char_count = vim.fn.strchars(text)
   
   for i = 0, char_count - 1 do
     local char_nr = vim.fn.strgetchar(text, i)
     local char = vim.fn.nr2char(char_nr)
-    table.insert(chars, 1, char)
+    
+    -- Check if character is Arabic, punctuation, or space
+    local is_arabic_char = (char_nr >= 0x0600 and char_nr <= 0x06FF) or
+                          (char_nr >= 0x0750 and char_nr <= 0x077F) or
+                          (char_nr >= 0x08A0 and char_nr <= 0x08FF) or
+                          (char_nr >= 0xFB50 and char_nr <= 0xFDFF) or
+                          (char_nr >= 0xFE70 and char_nr <= 0xFEFF)
+    
+    local is_space = char:match("%s")
+    local is_punct = char:match("[%p%c]") and not is_arabic_char
+    
+    -- If we hit a delimiter (space or punctuation), save current token
+    if is_space or is_punct then
+      if current_token ~= "" then
+        table.insert(tokens, current_token)
+        current_token = ""
+      end
+      table.insert(tokens, char)
+    else
+      current_token = current_token .. char
+    end
   end
   
-  return table.concat(chars)
+  -- Add final token if exists
+  if current_token ~= "" then
+    table.insert(tokens, current_token)
+  end
+  
+  -- Reverse the order of tokens, but keep Arabic words intact
+  local reversed_tokens = {}
+  for i = #tokens, 1, -1 do
+    table.insert(reversed_tokens, tokens[i])
+  end
+  
+  return table.concat(reversed_tokens)
 end
 
 local function close_current_hover()
@@ -102,7 +134,7 @@ local function show_rtl_hover()
   end
   
   -- Extract and reverse the entire line content
-  local rtl_text = reverse_text_properly(current_line)
+  local rtl_text = reverse_arabic_text(current_line)
   
   -- Ensure we have valid content
   if not rtl_text or rtl_text == "" then
