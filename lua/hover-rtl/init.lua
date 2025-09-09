@@ -155,12 +155,13 @@ local function show_rtl_hover()
 
 	current_hover_win = vim.lsp.util.open_floating_preview(lines, "text", opts)
 
-	-- Disable Arabic mode in the hover buffer for proper RTL display
-	if current_hover_win and vim.api.nvim_win_is_valid(current_hover_win) then
-		local hover_buf = vim.api.nvim_win_get_buf(current_hover_win)
-		vim.api.nvim_buf_set_option(hover_buf, "arabic", true)
-		vim.api.nvim_buf_set_option(hover_buf, "rightleftcmd", "search")
-	end
+  -- Enable Arabic mode in the hover buffer for proper RTL display
+  if current_hover_win and vim.api.nvim_win_is_valid(current_hover_win) then
+    local hover_buf = vim.api.nvim_win_get_buf(current_hover_win)
+    vim.api.nvim_buf_set_option(hover_buf, "arabic", true)
+    vim.api.nvim_buf_set_option(hover_buf, "rightleft", true)
+    vim.api.nvim_buf_set_option(hover_buf, "rightleftcmd", "search")
+  end
 end
 
 function M.setup(opts)
