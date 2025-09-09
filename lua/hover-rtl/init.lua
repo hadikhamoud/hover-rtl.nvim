@@ -23,8 +23,10 @@ end
 
 local function reverse_text(text)
   local chars = {}
-  for char in text:gmatch("[\u{0000}-\u{007F}\u{0080}-\u{07FF}\u{0800}-\u{FFFF}\u{10000}-\u{10FFFF}]") do
-    table.insert(chars, 1, char)
+  for char in vim.gsplit(text, "") do
+    if char ~= "" then
+      table.insert(chars, 1, char)
+    end
   end
   return table.concat(chars)
 end
