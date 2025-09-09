@@ -66,6 +66,13 @@ local function close_current_hover()
 end
 
 local function show_rtl_hover()
+  -- Don't trigger if cursor is in a floating window (hover window)
+  local current_win = vim.api.nvim_get_current_win()
+  local win_config = vim.api.nvim_win_get_config(current_win)
+  if win_config.relative ~= "" then
+    return
+  end
+  
   local current_line = vim.api.nvim_get_current_line()
   local cursor_pos = vim.api.nvim_win_get_cursor(0)
   
@@ -89,15 +96,25 @@ local function show_rtl_hover()
     return
   end
   
+  -- Skip empty lines
+  if current_line:match("^%s*$") then
+    return
+  end
+  
   -- Extract and reverse the entire line content
   local rtl_text = reverse_text_properly(current_line)
   
-  -- Use LSP-style hover with vim.lsp.util.open_floating_preview
+  -- Ensure we have valid content
+  if not rtl_text or rtl_text == "" then
+    return
+  end
+  
+  -- Use LSP-style hover with proper height calculation
   local lines = {rtl_text}
   local opts = {
     border = M.config.border,
     max_width = math.min(vim.o.columns - 4, 120),
-    max_height = math.min(vim.o.lines - 4, 20),
+    max_height = math.max(1, math.min(vim.o.lines - 4, 20)),
     wrap = true,
   }
   
