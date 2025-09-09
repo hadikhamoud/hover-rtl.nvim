@@ -144,24 +144,29 @@ local function show_rtl_hover()
 		return
 	end
 
-	-- Use LSP-style hover with proper height calculation
-	local lines = { rtl_text }
-	local opts = {
-		border = M.config.border,
-		max_width = math.min(vim.o.columns - 4, 120),
-		max_height = math.max(1, math.min(vim.o.lines - 4, 20)),
-		wrap = true,
-	}
-
-  current_hover_win = vim.lsp.util.open_floating_preview(lines, "text", opts)
-
-  -- Set Arabic display mode in the hover window for proper RTL rendering
-  if current_hover_win and vim.api.nvim_win_is_valid(current_hover_win) then
-    local hover_buf = vim.api.nvim_win_get_buf(current_hover_win)
-    -- Use window-local options instead of buffer options
-    vim.api.nvim_win_set_option(current_hover_win, "arabic", true)
-    vim.api.nvim_win_set_option(current_hover_win, "rightleft", true)
-  end
+  -- Create floating window manually to have full control over Arabic settings
+  local width = math.min(vim.fn.strwidth(rtl_text) + 4, vim.o.columns - 4)
+  local height = 1
+  
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, {rtl_text})
+  
+  local opts = {
+    relative = "cursor",
+    width = width,
+    height = height,
+    row = 1,
+    col = 0,
+    style = "minimal",
+    border = M.config.border,
+  }
+  
+  current_hover_win = vim.api.nvim_open_win(buf, false, opts)
+  
+  -- Enable Arabic mode specifically for this window
+  vim.api.nvim_win_set_option(current_hover_win, "arabic", true)
+  vim.api.nvim_buf_set_option(buf, "arabic", true)
+  vim.api.nvim_win_set_option(current_hover_win, "winhl", "Normal:" .. M.config.highlight)
 end
 
 function M.setup(opts)
